@@ -24,7 +24,7 @@ public:
 		cont = rhs.cont;
 		return *this;
 	}
-	Stack& operator=(Stack&& rhs) noexcept {
+	Stack& operator=(Stack&& rhs) noexcept(std::is_nothrow_move_assignable_v<Container>) {
 		cont = std::move(rhs);
 		return *this;
 	}
