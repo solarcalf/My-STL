@@ -10,9 +10,9 @@ template<typename T, class Container = std::deque<T>>
 class Stack {
 public:
 	using container_type	= Container;
-	using value_type		= typename Container::value_type;
-	using size_type			= typename Container::size_type;
-	using reference			= typename Container::reference;
+	using value_type	= typename Container::value_type;
+	using size_type		= typename Container::size_type;
+	using reference		= typename Container::reference;
 	using const_reference	= typename Container::const_reference;
 
 	Stack() = default;
@@ -24,7 +24,7 @@ public:
 		cont = rhs.cont;
 		return *this;
 	}
-	Stack& operator=(Stack&& rhs) noexcept {
+	Stack& operator=(Stack&& rhs) noexcept(std::is_nothrow_move_assignable_v<Container>) {
 		cont = std::move(rhs);
 		return *this;
 	}
