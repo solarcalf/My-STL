@@ -4,10 +4,10 @@
 #define ND [[nodiscard]]
 
 #include <deque>
-#include <iostream>
 
 template<typename T, class Container = std::deque<T>> 
 class Stack {
+
 public:
 	using container_type	= Container;
 	using value_type	= typename Container::value_type;
@@ -41,20 +41,20 @@ public:
 	}
 
 	// Element access
-	reference top() noexcept(noexcept(cont.back())) { 
+	reference top() noexcept(noexcept(this->cont.back())) { 
 		return cont.back();
 	}
 
-	const_reference top() const noexcept(noexcept(cont.back())) { 
+	const_reference top() const noexcept(noexcept(this->cont.back())) { 
 		return cont.back();
 	}
 
 	// Capacity
-	ND bool empty() const noexcept(noexcept(cont.empty())) { 
+	ND bool empty() const noexcept(noexcept(this->cont.empty())) { 
 		return cont.empty();
 	}
 
-	ND size_type size() const noexcept(noexcept(cont.size())) { 
+	ND size_type size() const noexcept(noexcept(this->cont.size())) { 
 		return cont.size();
 	}
 
@@ -72,7 +72,7 @@ public:
 		cont.emplace_back(std::forward<Args>(args)...); 
 	}
 
-	void pop() noexcept(noexcept(cont.pop_back())) {
+	void pop() noexcept(noexcept(this->cont.pop_back())) {
 		cont.pop_back();
 	}
 
@@ -85,7 +85,7 @@ public:
 	}
 
 protected:
-	Container cont;
+	Container cont;	
 };
 
 template <typename T, class Container>
