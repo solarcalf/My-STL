@@ -3,28 +3,30 @@
 
 #define ND [[nodiscard]]
 
-#include <xmemory>
-#include <iostream>  /////// REMOVE
+#include <memory>
+#include <iterator>
 
-///	This is implementation for C++14
-/// 
-/// Questions and problems:
-/// 1) If we have Forward_list instance and call operator= have we change allocator?												# In process
-/// 2) Don't forget to fix allocator as a class field and in every method which uses alloc											# Fixed
-/// 3) Ambiguous call	template <class Iterator>					 with  
-/// 					Forward_list(Iterator first, Iterator last)		   Forward_list(size_type, const T&, const Allocator&)
-/// 
-/// 
-/// There are what have to be edited for C++17:
-/// 1) Mention std::contiguous_iterator_tag in  template <class Iterator>
-/// 											Forward_list(Iterator first, Iterator last) 
-/// 2) std::allocator<T>::construct is depricated -> use std::allocator_traits
-/// 
-/// 
-/// Changes for C++20:
-/// 1) iterator_tags are depricated, use concepts instead
-/// 
-/// 
+/*	
+This is implementation for C++14
+ 
+Questions and problems:
+1) If we have Forward_list instance and call operator= have we change allocator?
+2) Ambiguous call	template <class Iterator>					 with  
+					Forward_list(Iterator first, Iterator last)		   Forward_list(size_type, const T&, const Allocator&)
+3) There is a real mess with aloocator types. Inexplicit conversion is everywhere. 
+   If it works correct for allocs there is no problem. Look at copy constructor.
+   It takes Allocator and initializes NodeAlloc with Alloc. But other methods can
+   give this constructor a NodeAlloc object so there will be one more conversion.
+   Otherwise we can write rebind by ourselves.
+ 
+There are what have to be edited for C++17:
+1) Mention std::contiguous_iterator_tag in  template <class Iterator>
+ 											Forward_list(Iterator first, Iterator last) 
+ 
+Changes for C++20:
+1) iterator_tags are depricated, use concepts instead
+*/ 
+ 
 
 
 
@@ -93,7 +95,7 @@ private:
 		bool operator!=(common_iterator<IsOtherConst> other) {
 			return ptr != other.ptr;
 		}
-	
+
 	};
 
 public:
@@ -173,27 +175,27 @@ public:
 			std::allocator_traits<NodeAlloc>::construct(this->alloc, tail, nullptr, iter->val);
 
 			pre_tail->next = tail;
-
 			iter = iter->next;
 			pre_tail = tail;
 			tail = nullptr;
 		}
 	} 
 
-	Forward_list(const Forward_list& other) : Forward_list(other, Allocator()) {}																// Использовать стандартный аллокатор или other.alloc?
+	Forward_list(const Forward_list& other) : Forward_list(other, std::allocator_traits<allocator_type>::select_on_container_copy_construction(other.get_allocator())) {}
 
-	Forward_list(Forward_list&& other, const Allocator& alloc) noexcept {																		// CHECK надо ли аллоцировать память по новому?
+	Forward_list(Forward_list&& other, const Allocator& alloc) noexcept {
 		if (this->alloc == other.alloc) {
 			std::swap(head, other.head);
 			std::swap(tail, other.tail);
 			std::swap(sz, other.sz);
 		}
-		else { // Заново аллоцировать память с новым аллокатором и перемещать каждый объект в новую память
-			
+		else {
+			Forward_list copied(other, alloc);
+			this->swap(copied);
 		}
 	}
 
-	Forward_list(Forward_list&& other) noexcept : Forward_list(std::move(other), std::move(other.alloc)) {}										
+	Forward_list(Forward_list&& other) noexcept : Forward_list(std::move(other), std::move(other.get_allocator())) {}										
 
 	Forward_list(std::initializer_list<T> init, const Allocator& alloc = Allocator()) : alloc(alloc) {
 		auto first = init.begin();
@@ -214,20 +216,30 @@ public:
 
 	~Forward_list() { clear(); }
 
-	Forward_list& operator=(const Forward_list& other) {						// CHECK
+	Forward_list& operator=(const Forward_list& other) {
 		if (this == &other)
 			return *this;
 		
-		Forward_list<T> copied(other);
-		this->swap(copied);
-
+		if constexpr (std::allocator_traits<allocator_type>::propagate_on_container_copy_assignment::value) {
+			Forward_list<T> copied(other, other.get_allocator());
+			this->swap(copied);
+			alloc = other.alloc;
+			copied.alloc = NodeAlloc();
+		}
+		else {
+			Forward_list<T> copied(other, get_allocator());
+			this->swap(copied);
+		}
+		
 		return *this;
 	}
 
-	Forward_list& operator=(Forward_list&& other) noexcept {		// CHECK! Why noexcept
+	Forward_list& operator=(Forward_list&& other) noexcept(std::allocator_traits<Allocator>::is_always_equal::value) {		// CHECK! Why noexcept
 		if (std::allocator_traits<allocator_type>::propagate_on_container_move_assignment::value || alloc == other.alloc) {
-			Forward_list<T> copied(std::move(other), other.alloc());
-			// ?
+			Forward_list<T> copied(std::move(other), other.get_allocator());
+			this->swap(copied);
+			alloc = other.alloc;
+			copied.alloc = NodeAlloc();
 		}
 		else {
 			Forward_list<T> copied(std::move(other));
@@ -245,6 +257,8 @@ public:
 		return *this;
 	}
 
+	constexpr allocator_type get_allocator() const { return Allocator(); }
+
 
 	// Element access
 
@@ -255,9 +269,9 @@ public:
 
 	// Capacity
 
-	ND bool empty() noexcept { return sz == 0; }
+	ND bool empty() const noexcept { return sz == 0; }
 
-	ND size_type size() noexcept { return sz; }
+	ND size_type size() const noexcept { return sz; }
 
 
 	// Modifiers
@@ -266,7 +280,6 @@ public:
 		while (sz)
 			pop_front();
 	}
-
 
 	void push_front(const T& val) {
 		auto p = std::allocator_traits<NodeAlloc>::allocate(alloc, 1);
@@ -305,7 +318,7 @@ public:
 		return head->val;
 	}
 
-	void swap(Forward_list& other) noexcept(std::allocator_traits<NodeAlloc>::is_always_equal::value) {
+	void swap(Forward_list& other) noexcept(std::allocator_traits<Allocator>::is_always_equal::value) {
 		if (std::allocator_traits<allocator_type>::propagate_on_container_swap::value)
 			std::swap(alloc, other.alloc);
 			
@@ -316,23 +329,47 @@ public:
 
 
 	// Operations
-
 	size_type remove(const T& val) {
-		size_type count = remove_if([](const T& x) {
-			return x = val;
-			});
-
+		size_type count = remove_if([val](const T& x) { return x == val; });
 		return count;
 	}
 
 	template <typename UnaryPredicate>
 	size_type remove_if(UnaryPredicate p) {
+		size_t removed = 0;
 
+		while (head && p(head->val)) {
+			pop_front();
+			++removed;
+		}
+
+		if (!sz) return 0;
+
+		Node<T>* left = head;
+		Node<T>* right = head->next;
+
+		while (right) {
+			if (p(right->val)) {
+				left->next = right->next;
+
+				std::allocator_traits<NodeAlloc>::destroy(alloc, right);
+				std::allocator_traits<NodeAlloc>::deallocate(alloc, right, 1);
+				--sz;
+
+				++removed;
+				right = left->next;
+			}
+			else {
+				left = right;
+				right = right->next;
+			}
+		}
+
+		return removed;
 	}
 
 	void reverse() {
-		if (!sz)
-			return;
+		if (!sz) return;
 
 		Node<T>* left = nullptr;
 		Node<T>* right = head;
@@ -350,10 +387,7 @@ public:
 	}
 
 	size_type unique() {
-		size_type count = unique([](int x, int y) {
-			return x == y;
-			});
-
+		size_type count = unique([](int x, int y) { return x == y; });
 		return count;
 	}
 
@@ -385,11 +419,11 @@ public:
 		return count;
 	}
 
-	// merge sort
 	void sort() {
-		
+		sort([](const T& x, const T& y){ return x < y; });
 	}
 
+	// merge sort
 	template <typename Compare>
 	void sort(Compare comp) { // comp = less
 
