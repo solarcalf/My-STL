@@ -418,6 +418,51 @@ public:
 
 		return count;
 	}
+
+	
+	//template <typename Compare = std::less>
+	void merge(Forward_list<T, Allocator>& other) {
+		if (this == &other || other.head == nullptr) return;
+
+		Node<T>* left = this->head;
+		Node<T>* right = other.head;
+
+		this->sz += other.sz;
+		other.sz = 0;
+
+		if (head == nullptr) {
+			head = right;
+			right = nullptr;
+			return;
+		}
+
+		if (right->val < head->val) {
+			Node<T>* great = right;
+			while (great->next && great->next->val < head->val)
+				great = great->next;
+
+			Node<T>* next_to_great = great->next;
+			great->next = head;
+			head = right;
+			right = next_to_great;
+		}
+
+		while (left && right && left->next) {
+			if (left->next->val <= right->val) { 
+				left = left->next;
+			}
+			else {
+				Node<T>* next_to_right = right->next;
+				Node<T>* next_to_left = left->next;
+
+				left->next = right;
+				right->next = next_to_left;
+				right = next_to_right;
+			}
+		}
+
+		left->next = right;
+	}
 	
 private:
 
@@ -534,5 +579,14 @@ template<typename T, typename Allocator, typename other_Allocator>
 bool operator>=(const Forward_list<T, Allocator>& left, const Forward_list<T, other_Allocator>& right) {
 	return !(left < right);
 }
+
+namespace std
+{
+	template <typename T, typename Allocator>
+	void swap(Forward_list<T, Allocator>& l, Forward_list<T, Allocator>& r) {
+		l.swap(l, r);
+	}
+}
+
 
 #endif

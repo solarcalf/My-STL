@@ -21,16 +21,10 @@ void print(const Container& cont) {
 int main() {
 
 	Forward_list<int> l{ 1, 2, 4 };
-	Forward_list<int> r{ 1, 2, 3, 1 };
+	Forward_list<int> r{ -1, -1, 0, 1, 2, 3, 5 };
 
-	cout << (l == r) << '\n';
-	cout << (l != r) << '\n';
-	cout << (l < r) << '\n';
-	cout << (l <= r) << '\n';
-	cout << (l > r) << '\n';
-	cout << (l >= r) << '\n';
+	l.merge(r);
 
-	cout << '\n';
-
+	print(l);
 }
 
