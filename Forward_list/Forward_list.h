@@ -420,7 +420,7 @@ public:
 	}
 
 	
-	//template <typename Compare = std::less>
+	template <typename Compare = std::less<T>>
 	void merge(Forward_list<T, Allocator>& other) {
 		if (this == &other || other.head == nullptr) return;
 
@@ -436,9 +436,11 @@ public:
 			return;
 		}
 
-		if (right->val < head->val) {
+		Compare comp;
+
+		if (comp(right->val, head->val)) {
 			Node<T>* great = right;
-			while (great->next && great->next->val < head->val)
+			while (great->next && comp(great->next->val, head->val))
 				great = great->next;
 
 			Node<T>* next_to_great = great->next;
@@ -448,7 +450,7 @@ public:
 		}
 
 		while (left && right && left->next) {
-			if (left->next->val <= right->val) { 
+			if (comp(left->next->val, right->val)) { 
 				left = left->next;
 			}
 			else {
