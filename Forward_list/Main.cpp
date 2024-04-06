@@ -20,13 +20,15 @@ void print(const Container& cont) {
 
 int main() {
 
-	Forward_list<int> l{ 1,2,3,4,5,6,7,8,9,10 };
-	Forward_list<int> r{};
+	Forward_list<int> l{ 1, 2, 4 };
+	Forward_list<int> r{ 1, 2, 3, 1 };
 
-	r = l;
-
-	for (auto x : r)
-		cout << x << ' ';
+	cout << (l == r) << '\n';
+	cout << (l != r) << '\n';
+	cout << (l < r) << '\n';
+	cout << (l <= r) << '\n';
+	cout << (l > r) << '\n';
+	cout << (l >= r) << '\n';
 
 	cout << '\n';
 

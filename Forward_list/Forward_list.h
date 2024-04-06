@@ -418,18 +418,48 @@ public:
 
 		return count;
 	}
+	
+private:
 
-	void sort() {
-		sort([](const T& x, const T& y){ return x < y; });
-	}
+	template <typename _Iter, typename Compare>
+	void merge_sort(_Iter begin, _Iter end, const Compare& comp) {
+		size_t dist = std::distance(begin, end);
+		if (dist <= 1) return;
 
-	// merge sort
-	template <typename Compare>
-	void sort(Compare comp) { // comp = less
+		_Iter mid = std::next(begin, dist / 2); 
+	
+		merge_sort(begin, mid, comp); // [b, m)
+		merge_sort(mid, end, comp); // [m, e)
 
+		T* buffer = new T[dist];
+		size_t ind = 0;
+		_Iter left = begin;
+		_Iter right = mid;
+
+		while (left != mid && right != end) {
+			if (comp(*left, *right)) buffer[ind] = std::move(*(left++));
+			else buffer[ind] = std::move(*(right++));
+			ind++;
+		}
+
+		while (left != mid)
+			buffer[ind++] = std::move(*(left++));
+		while (right != end)
+			buffer[ind++] = std::move(*(right++));
+
+		for (size_t i = 0; i < dist; ++i) 
+			*(begin++) = std::move(buffer[i]);
+
+		delete[] buffer;
 	}
 
 public:
+	template <typename Compare = std::less<T>>
+	void sort(Compare comp = Compare()) {
+		merge_sort(begin(), end(), comp);
+	}	
+
+
 	using NodeAlloc = typename Allocator::template rebind<Node<T>>::other;
 	
 	NodeAlloc alloc;
@@ -437,5 +467,72 @@ public:
 	Node<T>* tail = nullptr;
 	size_t sz = 0;
 };
+
+
+template<typename T, typename Allocator, typename other_Allocator>
+bool operator==(const Forward_list<T, Allocator>& left, const Forward_list<T, other_Allocator>& right) {
+	if (left.size() != right.size()) return 0;	
+	auto l_it = left.begin();
+	auto r_it = right.begin();
+
+	while (l_it != left.end() && r_it != right.end()) {
+		if (*l_it != *r_it) return 0;
+		++l_it;
+		++r_it;
+	}
+
+	return 1;
+}
+
+template<typename T, typename Allocator, typename other_Allocator>
+bool operator!=(const Forward_list<T, Allocator>& left, const Forward_list<T, other_Allocator>& right) {	
+	return (left == right);
+}
+
+template<typename T, typename Allocator, typename other_Allocator>
+bool operator<(const Forward_list<T, Allocator>& left, const Forward_list<T, other_Allocator>& right) {
+	auto l_it = left.begin();
+	auto r_it = right.begin();
+	bool one_less = 0;
+
+	while (l_it != left.end() && r_it != right.end()) {
+		if (*r_it < *l_it) return 0;
+		if (*l_it < *r_it) one_less = 1;
+		++l_it;
+		++r_it;
+	}
+
+	if (one_less) return 1;
+	if (left.size() < right.size()) return 1;
+	else return 0;
+}
+
+template<typename T, typename Allocator, typename other_Allocator>
+bool operator>(const Forward_list<T, Allocator>& left, const Forward_list<T, other_Allocator>& right) {
+	auto l_it = left.begin();
+	auto r_it = right.begin();
+	bool one_greater = 0;
+
+	while (l_it != left.end() && r_it != right.end()) {
+		if (*r_it > *l_it) return 0;
+		if (*l_it > *r_it) one_greater = 1;
+		++l_it;
+		++r_it;
+	}
+
+	if (one_greater) return 1;
+	if (left.size() > right.size()) return 1;
+	else return 0;
+}
+
+template<typename T, typename Allocator, typename other_Allocator>
+bool operator<=(const Forward_list<T, Allocator>& left, const Forward_list<T, other_Allocator>& right) {
+	return !(left > right);
+}
+
+template<typename T, typename Allocator, typename other_Allocator>
+bool operator>=(const Forward_list<T, Allocator>& left, const Forward_list<T, other_Allocator>& right) {
+	return !(left < right);
+}
 
 #endif
