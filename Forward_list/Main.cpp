@@ -22,12 +22,16 @@ void print(const Container& cont) {
 
 int main() {
 
-	Forward_list<int> l{1, 2, 3, 4, 5};
-	Forward_list<int> r{-1, -2, -3, -4};
+	vector<int> v{1, 2, 3};
+	
+	Forward_list<int> l(v.begin(), v.end());
+	Forward_list<int> r(3, 0);
+	
 
-	l.resize(3);
+	// Forward_list<int> r{-1, -2, -3, -4};
 
 	print(l);
+	print(r);
 }
 
 

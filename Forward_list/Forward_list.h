@@ -7,21 +7,6 @@
 #include <iterator>
 #include <functional>
 
-/*	
-This is implementation for C++14
- 
-Questions and problems:
-1) Ambiguous call	template <class Iterator>					 with  
-					Forward_list(Iterator first, Iterator last)		   Forward_list(size_type, const T&, const Allocator&)
- 
-There are what have to be edited for C++17:
-1) Mention std::contiguous_iterator_tag in  template <class Iterator>
- 											Forward_list(Iterator first, Iterator last) 
-
-*/ 
- 
-
-
 
 template <typename T, typename Allocator = std::allocator<T>>
 class Forward_list {
@@ -63,10 +48,6 @@ private:
 
 	private:
 		std::conditional_t<IsConst, const Node<T>*, Node<T>*> ptr = nullptr;
-	
-		// Private converting constructor, only accessible by Forward_list
-		// explicit common_iterator(const common_iterator<true>& other)
-		// 	: ptr(const_cast<Node<T>*>(other.ptr)) {}
 
 	public:
 		common_iterator(Node<T>* ptr) : ptr(ptr) {}
@@ -139,21 +120,23 @@ public:
 	explicit Forward_list(const Allocator& alloc) : alloc(alloc) {}
 
 	Forward_list(size_type count, const T& value, const Allocator& alloc = Allocator()): alloc(alloc) {		
-		for (size_t i = 0; i < count; ++i)																	
+		for (size_t i = 0; i < count; ++i) 
 			push_front(value);
 	}
 
+	template <typename U = T, std::enable_if_t<std::is_default_constructible_v<U>, int> = 0>
 	explicit Forward_list(size_type count, const Allocator& alloc = Allocator()) : Forward_list(count, T(), alloc) {}
 
-	template <class Iterator>																												
+	template<class Iterator, typename std::enable_if_t<
+    std::is_base_of_v<std::input_iterator_tag, typename std::iterator_traits<Iterator>::iterator_category> &&
+    !std::is_integral_v<Iterator>, Iterator>* = nullptr>
 	Forward_list(Iterator first, Iterator last, const Allocator& alloc = Allocator()) : alloc(alloc) {
-		if constexpr (std::is_same_v<std::iterator_traits<Iterator>::iterator_category, std::bidirectional_iterator_tag> ||	
-			std::is_same_v<std::iterator_traits<Iterator>::iterator_category, std::random_access_iterator_tag>) {	
+		if constexpr (std::is_same_v<typename std::iterator_traits<Iterator>::iterator_category, std::bidirectional_iterator_tag> ||	
+					  std::is_same_v<typename std::iterator_traits<Iterator>::iterator_category, std::random_access_iterator_tag>) {	
 			if (last == first)
 				return;
 
 			--last;
-
 			while (last > first) 
 				push_front(*(last--));
 
@@ -240,7 +223,7 @@ public:
 		return *this;
 	}
 
-	Forward_list& operator=(Forward_list&& other) noexcept(std::allocator_traits<Allocator>::is_always_equal::value) {		// CHECK! Why noexcept
+	Forward_list& operator=(Forward_list&& other) noexcept(std::allocator_traits<Allocator>::is_always_equal::value) {
 		if (std::allocator_traits<allocator_type>::propagate_on_container_move_assignment::value || alloc == other.alloc) {
 			Forward_list<T> copied(std::move(other), other.get_allocator());
 			this->swap(copied);
@@ -283,24 +266,15 @@ public:
 	// Modifiers
 
 	void clear() {
-		while (sz)
-			pop_front();
+		while (sz) pop_front();
 	}
 
 	void push_front(const T& val) {
-		auto p = std::allocator_traits<NodeAlloc>::allocate(alloc, 1);
-		std::allocator_traits<NodeAlloc>::construct(alloc, p, head, val);
-
-		head = p;
-		++sz;
+		emplace_front(val);
 	}
 
 	void push_front(T&& val) {
-		auto p = std::allocator_traits<NodeAlloc>::allocate(alloc, 1);
-		std::allocator_traits<NodeAlloc>::construct(alloc, p, head, std::move(val));
-
-		head = p;
-		++sz;
+		emplace_front(std::move(val));
 	}
 
 	void pop_front() {
@@ -320,7 +294,6 @@ public:
 		
 		++sz;
 		head = p;
-
 		return head->val;
 	}
 
@@ -334,27 +307,11 @@ public:
 	}
 
 	iterator insert_after(const_iterator pos, const T& value) {
-		Node<T>* pointer_to_pos = const_cast<Node<T>*>(pos.ptr);
-		Node<T>* next_to_pos = pointer_to_pos->next;
-
-		Node<T>* new_node = std::allocator_traits<NodeAlloc>::allocate(alloc, 1);
-		std::allocator_traits<NodeAlloc>::construct(alloc, new_node, next_to_pos, value);
-		pointer_to_pos->next = new_node;
-		++sz;
-
-		return iterator(new_node);
+		emplace_after(pos, value);
 	}
 
 	iterator insert_after(const_iterator pos, const T&& value) {
-		Node<T>* pointer_to_pos = const_cast<Node<T>*>(pos.ptr);
-		Node<T>* next_to_pos = pointer_to_pos->next;
-
-		Node<T>* new_node = std::allocator_traits<NodeAlloc>::allocate(alloc, 1);
-		std::allocator_traits<NodeAlloc>::construct(alloc, new_node, next_to_pos, std::move(value));
-		pointer_to_pos->next = new_node;
-		++sz;
-
-		return iterator(new_node);
+		emplace_after(pos, std::move(value));
 	}
 
 	iterator insert_after( const_iterator pos, size_type count, const T& value ) {
@@ -474,14 +431,12 @@ public:
 	template <typename UnaryPredicate>
 	size_type remove_if(UnaryPredicate p) {
 		size_t removed = 0;
-
 		while (head && p(head->val)) {
 			pop_front();
 			++removed;
 		}
 
 		if (!sz) return 0;
-
 		Node<T>* left = head;
 		Node<T>* right = head->next;
 
@@ -510,7 +465,6 @@ public:
 
 		Node<T>* left = nullptr;
 		Node<T>* right = head;
-
 		tail = left;
 
 		while (right) {
