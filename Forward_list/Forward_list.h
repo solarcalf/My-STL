@@ -5,26 +5,19 @@
 
 #include <memory>
 #include <iterator>
+#include <functional>
 
 /*	
 This is implementation for C++14
  
 Questions and problems:
-1) If we have Forward_list instance and call operator= have we change allocator?
-2) Ambiguous call	template <class Iterator>					 with  
+1) Ambiguous call	template <class Iterator>					 with  
 					Forward_list(Iterator first, Iterator last)		   Forward_list(size_type, const T&, const Allocator&)
-3) There is a real mess with aloocator types. Inexplicit conversion is everywhere. 
-   If it works correct for allocs there is no problem. Look at copy constructor.
-   It takes Allocator and initializes NodeAlloc with Alloc. But other methods can
-   give this constructor a NodeAlloc object so there will be one more conversion.
-   Otherwise we can write rebind by ourselves.
  
 There are what have to be edited for C++17:
 1) Mention std::contiguous_iterator_tag in  template <class Iterator>
  											Forward_list(Iterator first, Iterator last) 
- 
-Changes for C++20:
-1) iterator_tags are depricated, use concepts instead
+
 */ 
  
 
@@ -47,7 +40,7 @@ private:
 	template <typename U>
 	struct Node {
 		U val;
-		Node<U>* next;
+		mutable Node<U>* next;
 
 		Node(Node<U>* next = nullptr, const U& val = U()) :val(val), next(next) {}
 		Node(Node<U>* next = nullptr, U&& val = U()) :val(std::move(val)), next(next) {}
@@ -66,11 +59,20 @@ private:
 		using pointer = T*;  
 		using reference = T&;  
 
+		friend class Forward_list;
+
 	private:
 		std::conditional_t<IsConst, const Node<T>*, Node<T>*> ptr = nullptr;
 	
+		// Private converting constructor, only accessible by Forward_list
+		// explicit common_iterator(const common_iterator<true>& other)
+		// 	: ptr(const_cast<Node<T>*>(other.ptr)) {}
+
 	public:
 		common_iterator(Node<T>* ptr) : ptr(ptr) {}
+
+		template <bool IsOtherConst>
+		common_iterator(common_iterator<IsOtherConst> other) : ptr(other.ptr) {}
 
 		std::conditional_t<IsConst, const T&, T&> operator*() {
 			return ptr->val;
@@ -96,12 +98,16 @@ private:
 			return ptr != other.ptr;
 		}
 
+		template <bool IsOtherConst>
+		bool operator==(common_iterator<IsOtherConst> other) {
+			return ptr == other.ptr;
+		}
+
 	};
 
 public:
 	using iterator			=	common_iterator<false>;
 	using const_iterator	=	common_iterator<true>;
-
 
 	ND iterator begin() noexcept {
 		return iterator(head);
@@ -327,6 +333,137 @@ public:
 		std::swap(tail, other.tail);
 	}
 
+	iterator insert_after(const_iterator pos, const T& value) {
+		Node<T>* pointer_to_pos = const_cast<Node<T>*>(pos.ptr);
+		Node<T>* next_to_pos = pointer_to_pos->next;
+
+		Node<T>* new_node = std::allocator_traits<NodeAlloc>::allocate(alloc, 1);
+		std::allocator_traits<NodeAlloc>::construct(alloc, new_node, next_to_pos, value);
+		pointer_to_pos->next = new_node;
+		++sz;
+
+		return iterator(new_node);
+	}
+
+	iterator insert_after(const_iterator pos, const T&& value) {
+		Node<T>* pointer_to_pos = const_cast<Node<T>*>(pos.ptr);
+		Node<T>* next_to_pos = pointer_to_pos->next;
+
+		Node<T>* new_node = std::allocator_traits<NodeAlloc>::allocate(alloc, 1);
+		std::allocator_traits<NodeAlloc>::construct(alloc, new_node, next_to_pos, std::move(value));
+		pointer_to_pos->next = new_node;
+		++sz;
+
+		return iterator(new_node);
+	}
+
+	iterator insert_after( const_iterator pos, size_type count, const T& value ) {
+		if (count == 0) return iterator(const_cast<Node<T>*>(pos.ptr));
+		Node<T>* pointer_to_pos = const_cast<Node<T>*>(pos.ptr);
+		Node<T>* next_to_pos = pointer_to_pos->next;
+
+		Node<T>* new_nodes_first = std::allocator_traits<NodeAlloc>::allocate(alloc, 1);
+		std::allocator_traits<NodeAlloc>::construct(alloc, new_nodes_first, nullptr, value);
+		Node<T>* new_nodes_last = new_nodes_first;
+
+		for (size_t i = 1; i < count; ++i) {
+			Node<T>* new_node = std::allocator_traits<NodeAlloc>::allocate(alloc, 1);
+			std::allocator_traits<NodeAlloc>::construct(alloc, new_node, nullptr, value);
+			new_nodes_last->next = new_node;
+			new_nodes_last = new_node;
+		}
+
+		pointer_to_pos->next = new_nodes_first;
+		new_nodes_last->next = next_to_pos;
+		sz += count;
+		return iterator(new_nodes_last);
+	}
+
+	template<class InputIt, typename std::enable_if<
+    std::is_base_of<std::input_iterator_tag, typename std::iterator_traits<InputIt>::iterator_category>::value &&
+    !std::is_integral<InputIt>::value, InputIt>::type* = nullptr>
+	iterator insert_after(const_iterator pos, InputIt first, InputIt last) {
+		Node<T>* pointer_to_pos = const_cast<Node<T>*>(pos.ptr);
+		if (first == last) return iterator(pointer_to_pos);
+		Node<T>* next_to_pos = pointer_to_pos->next;
+
+		Node<T>* new_nodes_first = std::allocator_traits<NodeAlloc>::allocate(alloc, 1);
+		std::allocator_traits<NodeAlloc>::construct(alloc, new_nodes_first, nullptr, *(first++));
+		Node<T>* new_nodes_last = new_nodes_first;
+		++sz;
+
+		while (first != last) {
+			Node<T>* new_node = std::allocator_traits<NodeAlloc>::allocate(alloc, 1);
+			std::allocator_traits<NodeAlloc>::construct(alloc, new_node, nullptr, *(first++));
+			new_nodes_last->next = new_node;
+			new_nodes_last = new_node;
+			++sz;
+		}
+
+		pointer_to_pos->next = new_nodes_first;
+		new_nodes_last->next = next_to_pos;
+		return iterator(new_nodes_last);
+	}
+
+	iterator insert_after(const_iterator pos, std::initializer_list<T> ilist) {
+		return insert_after(pos, ilist.begin(), ilist.end());
+	}
+
+	template< class... Args >
+	iterator emplace_after(const_iterator pos, Args&&... args) {
+		Node<T>* pointer_to_pos = const_cast<Node<T>*>(pos.ptr);
+		Node<T>* next_to_pos = pointer_to_pos->next;
+
+		Node<T>* new_node = std::allocator_traits<NodeAlloc>::allocate(alloc, 1);
+		std::allocator_traits<NodeAlloc>::construct(alloc, new_node, next_to_pos, std::forward<Args>(args)...);
+		pointer_to_pos->next = new_node;
+		++sz;
+
+		return iterator(new_node);
+	}
+
+	iterator erase_after(const_iterator pos) {
+		Node<T>* pointer_to_pos = const_cast<Node<T>*>(pos.ptr);
+		if (pointer_to_pos->next == nullptr) return iterator(nullptr);
+		Node<T>* next_to_pos = pointer_to_pos->next;
+		pointer_to_pos->next = next_to_pos->next;
+
+		std::allocator_traits<NodeAlloc>::destroy(alloc, next_to_pos);
+		std::allocator_traits<NodeAlloc>::deallocate(alloc, next_to_pos, 1);
+		--sz;
+		return iterator(next_to_pos);
+	}
+
+	iterator erase_after(const_iterator first, const_iterator last) {
+		if (first == last) return iterator(const_cast<Node<T>*>(last.ptr));
+		Node<T>* pointer_to_last = const_cast<Node<T>*>(last.ptr);
+		Node<T>* pointer_to_first = const_cast<Node<T>*>(first.ptr);
+		Node<T>* to_erase = pointer_to_first->next;
+
+		while (to_erase != pointer_to_last) {
+			Node<T>* next_to_erase = to_erase->next;
+			std::allocator_traits<NodeAlloc>::destroy(alloc, to_erase);
+			std::allocator_traits<NodeAlloc>::deallocate(alloc, to_erase, 1);
+			to_erase = next_to_erase;
+			--sz;
+		}
+
+		pointer_to_first->next = pointer_to_last;
+		return iterator(pointer_to_last);
+	}
+
+	template <typename U = T, std::enable_if_t<std::is_default_constructible<U>::value, int> = 0>
+	void resize(size_type count) {
+		resize(count, T());
+	}
+
+	void resize( size_type count, const T& value ) {
+		if (count == sz) return;
+		while (sz > count)
+			pop_front();
+		while (sz < count)
+			push_front(value);
+	}
 
 	// Operations
 	size_type remove(const T& val) {
@@ -386,13 +523,8 @@ public:
 		head = left;
 	}
 
-	size_type unique() {
-		size_type count = unique([](int x, int y) { return x == y; });
-		return count;
-	}
-
-	template< class BinaryPredicate >
-	size_type unique(BinaryPredicate equal) {
+	template< class BinaryPredicate = std::equal_to<T>>
+	size_type unique(BinaryPredicate equal = BinaryPredicate()) {
 		if (sz <= 1)
 			return 0;
 
@@ -402,7 +534,6 @@ public:
 		while (next != nullptr) {
 			if (equal(cur->val, next->val)) {
 				next = next->next;
-
 				std::allocator_traits<NodeAlloc>::destroy(alloc, cur->next);
 				std::allocator_traits<NodeAlloc>::deallocate(alloc, cur->next, 1);
 
@@ -419,14 +550,12 @@ public:
 		return count;
 	}
 
-	
 	template <typename Compare = std::less<T>>
 	void merge(Forward_list<T, Allocator>& other) {
 		if (this == &other || other.head == nullptr) return;
 
 		Node<T>* left = this->head;
 		Node<T>* right = other.head;
-
 		this->sz += other.sz;
 		other.sz = 0;
 
@@ -437,7 +566,6 @@ public:
 		}
 
 		Compare comp;
-
 		if (comp(right->val, head->val)) {
 			Node<T>* great = right;
 			while (great->next && comp(great->next->val, head->val))
@@ -506,7 +634,6 @@ public:
 		merge_sort(begin(), end(), comp);
 	}	
 
-
 	using NodeAlloc = typename Allocator::template rebind<Node<T>>::other;
 	
 	NodeAlloc alloc;
@@ -516,70 +643,44 @@ public:
 };
 
 
-template<typename T, typename Allocator, typename other_Allocator>
-bool operator==(const Forward_list<T, Allocator>& left, const Forward_list<T, other_Allocator>& right) {
-	if (left.size() != right.size()) return 0;	
-	auto l_it = left.begin();
-	auto r_it = right.begin();
+enum class ListCompareResult {
+		Less,
+		Equal,
+		Greater 
+	};
 
-	while (l_it != left.end() && r_it != right.end()) {
-		if (*l_it != *r_it) return 0;
-		++l_it;
-		++r_it;
-	}
-
-	return 1;
+template<typename T, typename Allocator>
+ListCompareResult compare_lists(const Forward_list<T, Allocator>& lhs, const Forward_list<T, Allocator>& rhs) {
+    auto lit = lhs.begin(), rit = rhs.begin();
+    while (lit != lhs.end() && rit != rhs.end()) {
+        if (*lit < *rit) return ListCompareResult::Less;
+        if (*rit < *lit) return ListCompareResult::Greater;
+        ++lit;
+        ++rit;
+    }
+    if (lit == lhs.end() && rit == rhs.end()) return ListCompareResult::Equal;
+    if (lit == lhs.end()) return ListCompareResult::Less;
+    return ListCompareResult::Greater;
 }
 
-template<typename T, typename Allocator, typename other_Allocator>
-bool operator!=(const Forward_list<T, Allocator>& left, const Forward_list<T, other_Allocator>& right) {	
-	return (left == right);
+template<typename T, typename Allocator>
+bool operator!=(const Forward_list<T, Allocator>& lhs, const Forward_list<T, Allocator>& rhs) {
+    return compare_lists(lhs, rhs) != ListCompareResult::Equal;
 }
 
-template<typename T, typename Allocator, typename other_Allocator>
-bool operator<(const Forward_list<T, Allocator>& left, const Forward_list<T, other_Allocator>& right) {
-	auto l_it = left.begin();
-	auto r_it = right.begin();
-	bool one_less = 0;
-
-	while (l_it != left.end() && r_it != right.end()) {
-		if (*r_it < *l_it) return 0;
-		if (*l_it < *r_it) one_less = 1;
-		++l_it;
-		++r_it;
-	}
-
-	if (one_less) return 1;
-	if (left.size() < right.size()) return 1;
-	else return 0;
+template<typename T, typename Allocator>
+bool operator<=(const Forward_list<T, Allocator>& lhs, const Forward_list<T, Allocator>& rhs) {
+    return compare_lists(lhs, rhs) != ListCompareResult::Greater;
 }
 
-template<typename T, typename Allocator, typename other_Allocator>
-bool operator>(const Forward_list<T, Allocator>& left, const Forward_list<T, other_Allocator>& right) {
-	auto l_it = left.begin();
-	auto r_it = right.begin();
-	bool one_greater = 0;
-
-	while (l_it != left.end() && r_it != right.end()) {
-		if (*r_it > *l_it) return 0;
-		if (*l_it > *r_it) one_greater = 1;
-		++l_it;
-		++r_it;
-	}
-
-	if (one_greater) return 1;
-	if (left.size() > right.size()) return 1;
-	else return 0;
+template<typename T, typename Allocator>
+bool operator>(const Forward_list<T, Allocator>& lhs, const Forward_list<T, Allocator>& rhs) {
+    return compare_lists(lhs, rhs) == ListCompareResult::Greater;
 }
 
-template<typename T, typename Allocator, typename other_Allocator>
-bool operator<=(const Forward_list<T, Allocator>& left, const Forward_list<T, other_Allocator>& right) {
-	return !(left > right);
-}
-
-template<typename T, typename Allocator, typename other_Allocator>
-bool operator>=(const Forward_list<T, Allocator>& left, const Forward_list<T, other_Allocator>& right) {
-	return !(left < right);
+template<typename T, typename Allocator>
+bool operator>=(const Forward_list<T, Allocator>& lhs, const Forward_list<T, Allocator>& rhs) {
+    return compare_lists(lhs, rhs) != ListCompareResult::Less;
 }
 
 namespace std
@@ -589,6 +690,5 @@ namespace std
 		l.swap(l, r);
 	}
 }
-
 
 #endif

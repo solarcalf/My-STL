@@ -5,6 +5,8 @@
 #include <iostream>
 #include <unordered_map>
 #include <memory_resource>
+#include <functional>
+#include <algorithm>
 
 using namespace std;
 
@@ -20,11 +22,12 @@ void print(const Container& cont) {
 
 int main() {
 
-	Forward_list<int> l{ 1, 2, 4 };
-	Forward_list<int> r{ -1, -1, 0, 1, 2, 3, 5 };
+	Forward_list<int> l{1, 2, 3, 4, 5};
+	Forward_list<int> r{-1, -2, -3, -4};
 
-	l.merge(r);
+	l.resize(3);
 
 	print(l);
 }
+
 
