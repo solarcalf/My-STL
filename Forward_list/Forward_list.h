@@ -307,11 +307,11 @@ public:
 	}
 
 	iterator insert_after(const_iterator pos, const T& value) {
-		emplace_after(pos, value);
+		return emplace_after(pos, value);
 	}
 
 	iterator insert_after(const_iterator pos, const T&& value) {
-		emplace_after(pos, std::move(value));
+		return emplace_after(pos, std::move(value));
 	}
 
 	iterator insert_after( const_iterator pos, size_type count, const T& value ) {
@@ -504,6 +504,63 @@ public:
 		return count;
 	}
 
+	void splice_after(const_iterator pos, Forward_list& other) {
+		if (other.empty()) return;
+
+		Node<T>* before_other_end = other.begin().ptr;
+		while (before_other_end->next != nullptr)
+			before_other_end = before_other_end->next;
+		
+		Node<T>* pointer_to_pos = const_cast<Node<T>*>(pos.ptr);
+		Node<T>* next_to_pos = pointer_to_pos->next;
+
+		pointer_to_pos->next = other.begin().ptr;
+		before_other_end->next = next_to_pos;
+
+		other.head = nullptr;
+		other.sz = 0;
+		sz += other.sz;
+	}
+
+	void splice_after(const_iterator pos, Forward_list& other, const_iterator it) {
+		Node<T>* pointer_to_it = const_cast<Node<T>*>(it.ptr);
+		Node<T>* pointer_to_pos = const_cast<Node<T>*>(pos.ptr);
+		Node<T>* next_to_it = pointer_to_it->next;
+		Node<T>* next_to_pos = pointer_to_pos->next;
+		
+		pointer_to_it->next = next_to_it->next;
+		pointer_to_pos->next = next_to_it;
+		next_to_it->next = next_to_pos;
+		++sz;
+		--other.sz;
+	}
+
+	void splice_after(const_iterator pos, Forward_list& other, const_iterator first, const_iterator last) {
+		if (first == last) return;
+
+		Node<T>* pointer_to_other_first = const_cast<Node<T>*>(first.ptr);
+		Node<T>* pointer_to_other_last = const_cast<Node<T>*>(last.ptr);
+		Node<T>* before_other_last = pointer_to_other_first;
+
+		size_t count = 0;
+		while (before_other_last->next != pointer_to_other_last) {
+			before_other_last = before_other_last->next;
+			++count;
+		}
+
+		if (count == 0) return;
+		sz += count;
+    	other.sz -= count;
+
+		Node<T>* pointer_to_pos = const_cast<Node<T>*>(pos.ptr);
+		Node<T>* next_to_pos = pointer_to_pos->next;
+
+		pointer_to_pos->next = pointer_to_other_first->next;
+		before_other_last->next = next_to_pos;
+		pointer_to_other_first->next = pointer_to_other_last;
+	}
+
+
 	template <typename Compare = std::less<T>>
 	void merge(Forward_list<T, Allocator>& other) {
 		if (this == &other || other.head == nullptr) return;
@@ -615,6 +672,11 @@ ListCompareResult compare_lists(const Forward_list<T, Allocator>& lhs, const For
     if (lit == lhs.end() && rit == rhs.end()) return ListCompareResult::Equal;
     if (lit == lhs.end()) return ListCompareResult::Less;
     return ListCompareResult::Greater;
+}
+
+template<typename T, typename Allocator>
+bool operator==(const Forward_list<T, Allocator>& lhs, const Forward_list<T, Allocator>& rhs) {
+    return compare_lists(lhs, rhs) == ListCompareResult::Equal;
 }
 
 template<typename T, typename Allocator>
